@@ -5,16 +5,20 @@
   window.__linkedinConnectionRemoverLoaded = true;
 
   const STORAGE_KEY = "lcrStateV1";
-  const SEARCH_SETTLE_MS = 1800;
-  const ACTION_DELAY_RANGE = [1200, 2200];
-  const PERSON_DELAY_RANGE = [4500, 7500];
+  const SEARCH_SETTLE_MS = 750;
+  const ACTION_DELAY_RANGE = [300, 600];
+  const PERSON_DELAY_RANGE = [1200, 2000];
   const SELECTORS = {
-    search: 'input[data-testid="typeahead-input"], input[placeholder="Search by name"]',
+    search: [
+      '[componentkey="connectionsListTypeahead_ConnectionsListTypeahead"] input[data-testid="typeahead-input"]',
+      'main input[placeholder="Search by name"]',
+      'input[placeholder="Search by name"]'
+    ].join(", "),
     card: '[componentkey^="ConnectionCard_"]',
     profileLink: 'a[href*="linkedin.com/in/"], a[href^="/in/"]',
     menu: '[role="menu"]',
     menuItem: '[role="menuitem"]',
-    dialog: '[role="dialog"], dialog'
+    dialog: '[role="dialog"], [role="alertdialog"], dialog'
   };
 
   const state = {
@@ -45,6 +49,26 @@
   function textMatches(element, options) {
     const value = normalize(element?.innerText || element?.textContent);
     return options.some((option) => value === normalize(option));
+  }
+
+  function dialogConfirmsName(dialog, fullName) {
+    const dialogText = normalize(dialog?.innerText || dialog?.textContent);
+    const normalizedFullName = normalize(fullName);
+    if (dialogText.includes(normalizedFullName)) return true;
+
+    // O modal atual do LinkedIn costuma exibir somente o primeiro nome,
+    // mesmo quando o card e a busca mostram o nome completo.
+    const firstName = normalizedFullName.split(" ")[0];
+    if (!firstName) return false;
+    const words = dialogText.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    return words.includes(firstName);
+  }
+
+  function findRemovalDialog() {
+    return [...document.querySelectorAll(SELECTORS.dialog)]
+      .filter(visible)
+      .find((dialog) => [...dialog.querySelectorAll("button")]
+        .some((button) => textMatches(button, ["Remove connection", "Remover conexão"])));
   }
 
   async function waitFor(getter, timeout = 10000, interval = 200) {
@@ -127,7 +151,7 @@
   }
 
   function findCancelButton() {
-    const dialog = [...document.querySelectorAll(SELECTORS.dialog)].find(visible);
+    const dialog = findRemovalDialog();
     if (!dialog) return null;
     return [...dialog.querySelectorAll("button")].find((button) => textMatches(button, ["Cancel", "Cancelar"]));
   }
@@ -169,6 +193,7 @@
 
     const moreButton = findMoreButton(card, actualName);
     if (!moreButton) throw new Error("Botão de três pontos não encontrado.");
+    updateResult(index, "processing", "Abrindo menu de ações…");
     await sleep(randomBetween(ACTION_DELAY_RANGE));
     await checkpoint();
     moreButton.click();
@@ -178,13 +203,13 @@
       .find((item) => textMatches(item, ["Remove connection", "Remover conexão"]));
     if (!removeItem) throw new Error("Opção de remover conexão não encontrada.");
 
+    updateResult(index, "processing", "Abrindo confirmação do LinkedIn…");
     await sleep(randomBetween(ACTION_DELAY_RANGE));
     await checkpoint();
     removeItem.click();
 
-    const dialog = await waitFor(() => [...document.querySelectorAll(SELECTORS.dialog)].find(visible));
-    const dialogText = normalize(dialog.innerText);
-    if (!dialogText.includes(normalize(actualName))) {
+    const dialog = await waitFor(findRemovalDialog, 10000);
+    if (!dialogConfirmsName(dialog, actualName)) {
       findCancelButton()?.click();
       throw new Error("O modal não confirmou o nome esperado; operação cancelada.");
     }

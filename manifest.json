@@ -3,7 +3,7 @@
   "name": "LinkedIn Connection Remover",
   "version": "0.1.0",
   "description": "Remove conexões do LinkedIn a partir de uma lista, com confirmação, pausa e parada.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "scripting"],
   "host_permissions": ["https://www.linkedin.com/*"],
   "background": {
     "service_worker": "background.js"

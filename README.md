@@ -9,7 +9,7 @@ Extensão experimental para Google Chrome que processa uma lista de nomes e auto
 - Um nome por linha, com remoção automática de linhas vazias e duplicadas.
 - Confirmação explícita antes de iniciar.
 - Botões coloridos de **Run**, **Pause** e **Stop**.
-- Processamento sequencial com intervalos aleatórios.
+- Processamento sequencial com pequenos intervalos aleatórios e espera automática pela interface.
 - Correspondência exata, ignorando caixa, espaços repetidos e acentos.
 - Proteção contra resultado ausente ou ambíguo.
 - Verificação do nome novamente antes da confirmação final.
@@ -24,7 +24,7 @@ Extensão experimental para Google Chrome que processa uma lista de nomes e auto
 3. Clique em **Load unpacked** / **Carregar sem compactação**.
 4. Selecione esta pasta do projeto.
 5. Abra `https://www.linkedin.com/mynetwork/invite-connect/connections/`.
-6. Recarregue a página após instalar ou atualizar a extensão.
+6. Clique no ícone da extensão para mostrar ou ocultar o painel. Recarregar a página após uma atualização continua sendo recomendado, mas a extensão também tenta se injetar sob demanda.
 
 ## Uso
 

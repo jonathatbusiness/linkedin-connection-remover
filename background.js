@@ -6,6 +6,17 @@ chrome.action.onClicked.addListener(async (tab) => {
   try {
     await chrome.tabs.sendMessage(tab.id, { type: "LCR_TOGGLE_PANEL" });
   } catch (error) {
-    console.warn("Connection Remover: não foi possível abrir o painel.", error);
+    try {
+      await chrome.scripting.insertCSS({
+        target: { tabId: tab.id },
+        files: ["content.css"]
+      });
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["content.js"]
+      });
+    } catch (injectionError) {
+      console.warn("Connection Remover: não foi possível abrir o painel.", injectionError);
+    }
   }
 });
