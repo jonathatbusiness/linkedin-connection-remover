@@ -266,6 +266,52 @@
     return { added, duplicates, cards: cards.length };
   }
 
+  function syncInlineCollectButtons() {
+    const collected = new Set(state.collection.profiles.map((profile) => profile.profileKey));
+    document.querySelectorAll(".lcr-inline-collect").forEach((button) => {
+      const isCollected = collected.has(button.dataset.profileKey);
+      const label = isCollected ? "✓" : "+";
+      button.classList.toggle("is-collected", isCollected);
+      button.disabled = isCollected;
+      if (button.textContent !== label) button.textContent = label;
+      button.title = isCollected ? "Profile collected" : "Collect profile";
+    });
+  }
+
+  function collectSingleProfile(profile) {
+    if (state.collection.profiles.some((item) => item.profileKey === profile.profileKey)) return;
+    state.collection.profiles.push(profile);
+    state.collection.currentPage = getCurrentPage();
+    state.collection.message = `${profile.name} added to collected profiles.`;
+    render();
+    persist();
+  }
+
+  function injectInlineCollectButtons() {
+    if (!isPeopleSearchPage()) return;
+    for (const card of getSearchResultCards()) {
+      const profile = extractProfile(card);
+      if (!profile) continue;
+      const messageControl = card.querySelector('a[aria-label^="Send a message"], a[href^="/messaging/compose/"]');
+      const actionContainer = messageControl?.parentElement?.parentElement;
+      if (!actionContainer || actionContainer.querySelector(".lcr-inline-collect")) continue;
+      actionContainer.classList.add("lcr-inline-actions");
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "lcr-inline-collect";
+      button.dataset.profileKey = profile.profileKey;
+      button.setAttribute("aria-label", `Collect ${profile.name}`);
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        collectSingleProfile(profile);
+      });
+      actionContainer.appendChild(button);
+    }
+    syncInlineCollectButtons();
+  }
+
   async function collectionCheckpoint() {
     while (state.collection.pauseRequested && !state.collection.stopRequested) {
       state.collection.mode = "paused";
@@ -527,7 +573,7 @@
     });
   }
 
-  function addCollectedToRemoval() {
+  async function addCollectedToRemoval() {
     const names = state.collection.profiles.map((profile) => profile.name);
     const merged = parseNames([...state.removal.names, ...names].join("\n"));
     state.removal.names = merged;
@@ -535,10 +581,8 @@
     state.removal.results = merged.map((name) => ({ name, status: "waiting", message: "Waiting" }));
     state.removal.mode = "idle";
     state.removal.message = `${names.length} collected profiles added to the removal queue.`;
-    state.activeTab = "remove";
     syncTextarea();
-    render();
-    persist();
+    await openSection("remove");
   }
 
   function clearProcessed() {
@@ -552,6 +596,21 @@
     state.removal.pauseRequested = false;
     state.removal.stopRequested = false;
     state.removal.message = "Processed results cleared from local history.";
+    syncTextarea();
+    render();
+    persist();
+  }
+
+  function clearRemovalQueue() {
+    removalRunGeneration += 1;
+    removalLoopActive = false;
+    state.removal.names = [];
+    state.removal.results = [];
+    state.removal.index = 0;
+    state.removal.mode = "idle";
+    state.removal.pauseRequested = false;
+    state.removal.stopRequested = false;
+    state.removal.message = "Removal queue cleared from local storage.";
     syncTextarea();
     render();
     persist();
@@ -608,6 +667,7 @@
     root.querySelector("[data-action=remove-run]").disabled = state.removal.mode === "running" || !isConnectionsPage();
     root.querySelector("[data-action=remove-pause]").disabled = state.removal.mode !== "running";
     root.querySelector("[data-action=remove-stop]").disabled = !removalRunning;
+    root.querySelector("[data-action=clear-queue]").disabled = state.removal.mode === "running" || (!state.removal.names.length && !state.removal.results.length);
     const hasProcessedResults = state.removal.results.some((result, index) => result.status !== "waiting" || index < state.removal.index);
     root.querySelector("[data-action=clear-processed]").disabled = state.removal.mode === "running" || !hasProcessedResults;
     root.querySelector(".lcr-remove-state").textContent = statusLabel(state.removal.mode);
@@ -619,6 +679,7 @@
       row.querySelector("strong").textContent = state.removal.results[index].name;
       row.querySelector("small").textContent = state.removal.results[index].message;
     });
+    syncInlineCollectButtons();
   }
 
   function createPanel() {
@@ -636,7 +697,7 @@
         <button class="lcr-button lcr-button-secondary lcr-full" data-action="add-to-removal" type="button">Add collected profiles to removal</button>
       </section>
       <section class="lcr-panel" data-panel="remove" hidden>
-        <label class="lcr-label" for="lcr-names">Removal queue</label><textarea class="lcr-textarea" id="lcr-names" placeholder="One exact name per line"></textarea><p class="lcr-hint">Collected profiles and manually entered names remain separate from the collection action until you start removal.</p>
+        <div class="lcr-section-heading lcr-queue-heading"><label class="lcr-label" for="lcr-names">Removal queue</label><button class="lcr-text-button" data-action="clear-queue" type="button">Clear queue</button></div><textarea class="lcr-textarea" id="lcr-names" placeholder="One exact name per line"></textarea><p class="lcr-hint">Adding collected profiles appends them to this saved queue. Clear the queue to start over.</p>
         <div class="lcr-controls"><button class="lcr-button lcr-button-primary" data-action="remove-run" type="button"><span class="lcr-play-icon">▶</span> Run removal</button><button class="lcr-button lcr-button-secondary lcr-square" data-action="remove-pause" type="button" aria-label="Pause removal">Ⅱ</button><button class="lcr-button lcr-button-tertiary lcr-square lcr-stop-icon" data-action="remove-stop" type="button" aria-label="Stop removal">■</button></div>
         <div class="lcr-status"><div class="lcr-status-line"><strong class="lcr-remove-state">Ready</strong><span class="lcr-remove-progress">0 / 0</span></div><p class="lcr-remove-message">No removal in progress.</p></div>
         <div class="lcr-section-heading"><h3>Queue results</h3><button class="lcr-text-button" data-action="clear-processed" type="button">Clear processed</button></div><div class="lcr-results lcr-scroll-list"><div class="lcr-empty">No queue results yet.</div></div>
@@ -679,6 +740,10 @@
     });
     root.querySelector("[data-action=remove-pause]").addEventListener("click", () => { state.removal.pauseRequested = true; state.removal.mode = "paused"; render(); persist(); });
     root.querySelector("[data-action=remove-stop]").addEventListener("click", () => { state.removal.stopRequested = true; state.removal.pauseRequested = false; findCancelButton()?.click(); state.removal.mode = "stopped"; state.removal.message = "Stopping removal..."; render(); persist(); });
+    root.querySelector("[data-action=clear-queue]").addEventListener("click", async () => {
+      const confirmed = await showConfirmation({ title: "Clear removal queue?", body: "This removes every pending name and result from local extension storage.", warning: "This does not remove or change any LinkedIn connection.", confirmText: "Clear queue" });
+      if (confirmed) clearRemovalQueue();
+    });
     root.querySelector("[data-action=clear-processed]").addEventListener("click", async () => {
       const confirmed = await showConfirmation({ title: "Clear processed results?", body: "This removes completed and failed entries from local extension history only.", warning: "This does not change any LinkedIn connection.", confirmText: "Clear processed" });
       if (confirmed) clearProcessed();
@@ -688,6 +753,7 @@
 
   let lastRoute = location.pathname;
   function monitorRoute() {
+    injectInlineCollectButtons();
     if (location.pathname === lastRoute) return;
     lastRoute = location.pathname;
     if (state.collection.mode === "running" && !isPeopleSearchPage()) {
@@ -714,6 +780,16 @@
   });
 
   const panel = createPanel();
+  let inlineInjectionFrame = 0;
+  const inlineButtonObserver = new MutationObserver(() => {
+    if (inlineInjectionFrame || !isPeopleSearchPage()) return;
+    inlineInjectionFrame = requestAnimationFrame(() => {
+      inlineInjectionFrame = 0;
+      injectInlineCollectButtons();
+    });
+  });
+  inlineButtonObserver.observe(document.body, { childList: true, subtree: true });
+  injectInlineCollectButtons();
   async function restoreState() {
     if (!hasExtensionContext()) return;
     try {
@@ -729,6 +805,7 @@
       if (isPeopleSearchPage()) state.collection.searchUrl = searchStartUrl();
       syncTextarea();
       render();
+      injectInlineCollectButtons();
     } catch (error) {
       if (!isInvalidatedContextError(error)) console.warn("Connection Remover could not restore its state.", error);
     }
