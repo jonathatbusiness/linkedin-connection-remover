@@ -56,6 +56,8 @@
     }
   };
 
+  let removalLoopActive = false;
+
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const randomBetween = ([min, max]) => Math.floor(min + Math.random() * (max - min + 1));
   const normalize = (value) => (value || "")
@@ -448,6 +450,7 @@
       render();
       return;
     }
+    removalLoopActive = true;
     state.removal.mode = "running";
     state.removal.pauseRequested = false;
     state.removal.stopRequested = false;
@@ -481,6 +484,7 @@
     } else if (state.removal.stopRequested) {
       state.removal.mode = "stopped";
     }
+    removalLoopActive = false;
     render();
     await persist();
   }
@@ -524,12 +528,14 @@
   }
 
   function clearProcessed() {
-    const processed = new Set(["removed", "error", "ambiguous"]);
+    const processed = new Set(["removed", "error", "ambiguous", "stopped"]);
     const pending = state.removal.results.filter((result) => !processed.has(result.status));
     state.removal.names = pending.map((result) => result.name);
     state.removal.results = pending.map((result) => ({ ...result, status: "waiting", message: "Waiting" }));
     state.removal.index = 0;
     state.removal.mode = "idle";
+    state.removal.pauseRequested = false;
+    state.removal.stopRequested = false;
     state.removal.message = "Processed results cleared from local history.";
     syncTextarea();
     render();
@@ -587,7 +593,7 @@
     root.querySelector("[data-action=remove-run]").disabled = state.removal.mode === "running" || !isConnectionsPage();
     root.querySelector("[data-action=remove-pause]").disabled = state.removal.mode !== "running";
     root.querySelector("[data-action=remove-stop]").disabled = !removalRunning;
-    root.querySelector("[data-action=clear-processed]").disabled = removalRunning || !state.removal.results.some((result) => ["removed", "error", "ambiguous"].includes(result.status));
+    root.querySelector("[data-action=clear-processed]").disabled = removalLoopActive || state.removal.mode === "running" || !state.removal.results.some((result) => ["removed", "error", "ambiguous", "stopped"].includes(result.status));
     root.querySelector(".lcr-remove-state").textContent = statusLabel(state.removal.mode);
     root.querySelector(".lcr-remove-progress").textContent = `${Math.min(state.removal.index, state.removal.names.length)} / ${state.removal.names.length}`;
     root.querySelector(".lcr-remove-message").textContent = state.removal.message;
