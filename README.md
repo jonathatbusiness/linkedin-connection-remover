@@ -19,7 +19,7 @@ An experimental Google Chrome extension that processes a list of names and autom
 - Displays an individual success or error result for each name.
 - Allows collected profiles and processed removal results to be cleared independently.
 - Stores the queue and its progress in `chrome.storage.local`.
-- Lets you show or hide the panel by clicking the extension icon.
+- Opens the collection panel and its saved LinkedIn people search when you click the extension icon.
 - Uses the **Collect** and **Remove** tabs to open the corresponding LinkedIn page automatically.
 
 ## Install locally

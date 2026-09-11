@@ -3,13 +3,24 @@
   "name": "LinkedIn Connection Remover",
   "version": "0.2.0",
   "description": "Collect filtered LinkedIn connections and remove selected connections with explicit confirmation.",
+  "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
   "permissions": ["storage", "scripting"],
   "host_permissions": ["https://www.linkedin.com/*"],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Show or hide Connection Remover"
+    "default_title": "Open Connection Remover collection",
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png",
+      "48": "icon48.png"
+    }
   },
   "content_scripts": [
     {

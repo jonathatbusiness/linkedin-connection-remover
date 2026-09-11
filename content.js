@@ -57,9 +57,12 @@
   };
 
   let removalLoopActive = false;
+  let removalRunGeneration = 0;
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const randomBetween = ([min, max]) => Math.floor(min + Math.random() * (max - min + 1));
+  const hasExtensionContext = () => Boolean(globalThis.chrome?.runtime?.id);
+  const isInvalidatedContextError = (error) => /extension context invalidated/i.test(error?.message || "");
   const normalize = (value) => (value || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -144,23 +147,28 @@
   }
 
   async function persist() {
-    await chrome.storage.local.set({
-      [STORAGE_KEY]: {
-        activeTab: state.activeTab,
-        collection: {
-          ...state.collection,
-          mode: state.collection.mode === "running" ? "paused" : state.collection.mode,
-          pauseRequested: false,
-          stopRequested: false
-        },
-        removal: {
-          ...state.removal,
-          mode: state.removal.mode === "running" ? "paused" : state.removal.mode,
-          pauseRequested: false,
-          stopRequested: false
+    if (!hasExtensionContext()) return;
+    try {
+      await chrome.storage.local.set({
+        [STORAGE_KEY]: {
+          activeTab: state.activeTab,
+          collection: {
+            ...state.collection,
+            mode: state.collection.mode === "running" ? "paused" : state.collection.mode,
+            pauseRequested: false,
+            stopRequested: false
+          },
+          removal: {
+            ...state.removal,
+            mode: state.removal.mode === "running" ? "paused" : state.removal.mode,
+            pauseRequested: false,
+            stopRequested: false
+          }
         }
-      }
-    });
+      });
+    } catch (error) {
+      if (!isInvalidatedContextError(error)) console.warn("Connection Remover could not save its state.", error);
+    }
   }
 
   function setNativeInputValue(input, value) {
@@ -381,19 +389,21 @@
     persist();
   }
 
-  async function removalCheckpoint() {
+  async function removalCheckpoint(runGeneration) {
     while (state.removal.pauseRequested && !state.removal.stopRequested) {
+      if (runGeneration !== removalRunGeneration) throw new Error("__LCR_CANCELLED__");
       state.removal.mode = "paused";
       render();
       await sleep(200);
     }
+    if (runGeneration !== removalRunGeneration) throw new Error("__LCR_CANCELLED__");
     if (state.removal.stopRequested) throw new Error("__LCR_STOPPED__");
     if (!isConnectionsPage()) throw new Error("__LCR_WRONG_PAGE__");
   }
 
-  async function processName(name, index) {
+  async function processName(name, index, runGeneration) {
+    await removalCheckpoint(runGeneration);
     updateRemovalResult(index, "processing", "Searching...");
-    await removalCheckpoint();
     const search = await waitFor(() => document.querySelector(SELECTORS.connectionSearch));
     search.focus();
     setNativeInputValue(search, name);
@@ -417,7 +427,7 @@
     if (!moreButton) throw new Error("Actions button not found.");
     updateRemovalResult(index, "processing", "Opening actions menu...");
     await sleep(randomBetween(ACTION_DELAY_RANGE));
-    await removalCheckpoint();
+    await removalCheckpoint(runGeneration);
     moreButton.click();
 
     const menu = await waitFor(() => [...document.querySelectorAll(SELECTORS.menu)].find(visible));
@@ -426,7 +436,7 @@
     if (!removeItem) throw new Error("Remove connection action not found.");
     updateRemovalResult(index, "processing", "Opening LinkedIn confirmation...");
     await sleep(randomBetween(ACTION_DELAY_RANGE));
-    await removalCheckpoint();
+    await removalCheckpoint(runGeneration);
     removeItem.click();
 
     const dialog = await waitFor(findRemovalDialog);
@@ -438,7 +448,7 @@
       .find((button) => textMatches(button, ["Remove connection", "Remover conexão"]));
     updateRemovalResult(index, "processing", "Confirming removal...");
     await sleep(randomBetween(ACTION_DELAY_RANGE));
-    await removalCheckpoint();
+    await removalCheckpoint(runGeneration);
     confirmButton.click();
     await waitFor(() => !document.body.contains(dialog) || !visible(dialog));
     updateRemovalResult(index, "removed", "Connection removed.");
@@ -450,6 +460,7 @@
       render();
       return;
     }
+    const runGeneration = ++removalRunGeneration;
     removalLoopActive = true;
     state.removal.mode = "running";
     state.removal.pauseRequested = false;
@@ -459,8 +470,9 @@
     for (; state.removal.index < state.removal.names.length; state.removal.index += 1) {
       const currentIndex = state.removal.index;
       try {
-        await processName(state.removal.names[currentIndex], currentIndex);
+        await processName(state.removal.names[currentIndex], currentIndex, runGeneration);
       } catch (error) {
+        if (error.message === "__LCR_CANCELLED__") break;
         if (error.message === "__LCR_STOPPED__") {
           updateRemovalResult(currentIndex, "stopped", "Stopped before removal.");
           break;
@@ -476,6 +488,8 @@
       if (state.removal.stopRequested || state.removal.mode === "paused") break;
       if (state.removal.index < state.removal.names.length - 1) await sleep(randomBetween(PERSON_DELAY_RANGE));
     }
+
+    if (runGeneration !== removalRunGeneration) return;
 
     if (!state.removal.stopRequested && state.removal.index >= state.removal.names.length - 1 && state.removal.mode !== "paused") {
       state.removal.index = state.removal.names.length;
@@ -528,8 +542,9 @@
   }
 
   function clearProcessed() {
-    const processed = new Set(["removed", "error", "ambiguous", "stopped"]);
-    const pending = state.removal.results.filter((result) => !processed.has(result.status));
+    removalRunGeneration += 1;
+    removalLoopActive = false;
+    const pending = state.removal.results.filter((result, index) => result.status === "waiting" && index >= state.removal.index);
     state.removal.names = pending.map((result) => result.name);
     state.removal.results = pending.map((result) => ({ ...result, status: "waiting", message: "Waiting" }));
     state.removal.index = 0;
@@ -593,7 +608,8 @@
     root.querySelector("[data-action=remove-run]").disabled = state.removal.mode === "running" || !isConnectionsPage();
     root.querySelector("[data-action=remove-pause]").disabled = state.removal.mode !== "running";
     root.querySelector("[data-action=remove-stop]").disabled = !removalRunning;
-    root.querySelector("[data-action=clear-processed]").disabled = removalLoopActive || state.removal.mode === "running" || !state.removal.results.some((result) => ["removed", "error", "ambiguous", "stopped"].includes(result.status));
+    const hasProcessedResults = state.removal.results.some((result, index) => result.status !== "waiting" || index < state.removal.index);
+    root.querySelector("[data-action=clear-processed]").disabled = state.removal.mode === "running" || !hasProcessedResults;
     root.querySelector(".lcr-remove-state").textContent = statusLabel(state.removal.mode);
     root.querySelector(".lcr-remove-progress").textContent = `${Math.min(state.removal.index, state.removal.names.length)} / ${state.removal.names.length}`;
     root.querySelector(".lcr-remove-message").textContent = state.removal.message;
@@ -689,23 +705,34 @@
   }
 
   chrome.runtime.onMessage.addListener((message) => {
-    if (message?.type !== "LCR_TOGGLE_PANEL") return;
-    document.querySelector("#lcr-root")?.classList.toggle("lcr-hidden");
+    if (message?.type !== "LCR_OPEN_COLLECT") return;
+    state.activeTab = "collect";
+    const root = document.querySelector("#lcr-root");
+    root?.classList.remove("lcr-hidden");
+    render();
+    persist();
   });
 
   const panel = createPanel();
-  chrome.storage.local.get([STORAGE_KEY, LEGACY_STORAGE_KEY]).then((saved) => {
-    const previous = saved[STORAGE_KEY];
-    if (previous?.collection) Object.assign(state.collection, previous.collection, { pauseRequested: false, stopRequested: false });
-    if (previous?.removal) Object.assign(state.removal, previous.removal, { pauseRequested: false, stopRequested: false });
-    if (saved[LEGACY_STORAGE_KEY] && !previous?.removal) {
-      const legacy = saved[LEGACY_STORAGE_KEY];
-      Object.assign(state.removal, { names: legacy.names || [], index: legacy.index || 0, results: legacy.results || [], mode: legacy.mode || "idle" });
+  async function restoreState() {
+    if (!hasExtensionContext()) return;
+    try {
+      const saved = await chrome.storage.local.get([STORAGE_KEY, LEGACY_STORAGE_KEY]);
+      const previous = saved[STORAGE_KEY];
+      if (previous?.collection) Object.assign(state.collection, previous.collection, { pauseRequested: false, stopRequested: false });
+      if (previous?.removal) Object.assign(state.removal, previous.removal, { pauseRequested: false, stopRequested: false });
+      if (saved[LEGACY_STORAGE_KEY] && !previous?.removal) {
+        const legacy = saved[LEGACY_STORAGE_KEY];
+        Object.assign(state.removal, { names: legacy.names || [], index: legacy.index || 0, results: legacy.results || [], mode: legacy.mode || "idle" });
+      }
+      state.activeTab = isPeopleSearchPage() ? "collect" : "remove";
+      if (isPeopleSearchPage()) state.collection.searchUrl = searchStartUrl();
+      syncTextarea();
+      render();
+    } catch (error) {
+      if (!isInvalidatedContextError(error)) console.warn("Connection Remover could not restore its state.", error);
     }
-    state.activeTab = isPeopleSearchPage() ? "collect" : "remove";
-    if (isPeopleSearchPage()) state.collection.searchUrl = searchStartUrl();
-    syncTextarea();
-    render();
-  });
+  }
+  restoreState();
   setInterval(monitorRoute, 500);
 })();
