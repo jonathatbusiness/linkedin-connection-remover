@@ -1,5 +1,7 @@
 chrome.action.onClicked.addListener(async (tab) => {
-  if (!tab.id || !tab.url?.startsWith("https://www.linkedin.com/mynetwork/invite-connect/connections")) {
+  const supportedPage = tab.url?.startsWith("https://www.linkedin.com/mynetwork/invite-connect/connections") ||
+    tab.url?.startsWith("https://www.linkedin.com/search/results/people");
+  if (!tab.id || !supportedPage) {
     return;
   }
 
@@ -16,7 +18,7 @@ chrome.action.onClicked.addListener(async (tab) => {
         files: ["content.js"]
       });
     } catch (injectionError) {
-      console.warn("Connection Remover: não foi possível abrir o painel.", injectionError);
+      console.warn("Connection Remover: could not open the panel.", injectionError);
     }
   }
 });

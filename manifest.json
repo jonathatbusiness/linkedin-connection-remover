@@ -1,19 +1,22 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn Connection Remover",
-  "version": "0.1.0",
-  "description": "Remove conexões do LinkedIn a partir de uma lista, com confirmação, pausa e parada.",
+  "version": "0.2.0",
+  "description": "Collect filtered LinkedIn connections and remove selected connections with explicit confirmation.",
   "permissions": ["storage", "scripting"],
   "host_permissions": ["https://www.linkedin.com/*"],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Mostrar/ocultar Connection Remover"
+    "default_title": "Show or hide Connection Remover"
   },
   "content_scripts": [
     {
-      "matches": ["https://www.linkedin.com/mynetwork/invite-connect/connections/*"],
+      "matches": [
+        "https://www.linkedin.com/mynetwork/invite-connect/connections/*",
+        "https://www.linkedin.com/search/results/people/*"
+      ],
       "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"

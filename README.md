@@ -7,6 +7,9 @@ An experimental Google Chrome extension that processes a list of names and autom
 ## Features
 
 - Accepts one name per line and automatically removes blank and duplicate entries.
+- Collects first-degree profiles from filtered LinkedIn people searches across multiple pages.
+- Keeps profile collection and connection removal as separate, explicit actions.
+- Deduplicates collected profiles by canonical LinkedIn profile URL.
 - Requires explicit confirmation before processing the queue.
 - Provides color-coded **Run**, **Pause**, and **Stop** controls.
 - Processes names sequentially with short randomized intervals and fast polling for interface changes.
@@ -14,8 +17,10 @@ An experimental Google Chrome extension that processes a list of names and autom
 - Prevents removal when a result is missing or ambiguous.
 - Verifies the person's name again before the final confirmation.
 - Displays an individual success or error result for each name.
+- Allows collected profiles and processed removal results to be cleared independently.
 - Stores the queue and its progress in `chrome.storage.local`.
 - Lets you show or hide the panel by clicking the extension icon.
+- Uses the **Collect** and **Remove** tabs to open the corresponding LinkedIn page automatically.
 
 ## Install locally
 
@@ -27,6 +32,20 @@ An experimental Google Chrome extension that processes a list of names and autom
 6. Click the extension icon to show or hide the panel. Reloading the LinkedIn page after updating the extension is still recommended, although the extension can also inject itself on demand.
 
 ## Usage
+
+### Collect profiles from a filtered search
+
+1. Open a LinkedIn people search and apply the **1st** connection filter.
+2. Apply any additional location, company, keyword, or other filters directly in LinkedIn.
+3. Open the extension and select **Collect**.
+4. Click **Collect all pages**. The extension captures only the main search-result profiles, follows **Next**, and stops at the final page.
+5. Review the collected profiles, then click **Add collected profiles to removal**.
+
+Collection never starts removal. Collected profiles are deduplicated by canonical profile URL and stored locally until cleared.
+
+Selecting **Collect** opens the last saved people-search URL with its filters preserved and resets it to the first page. Selecting **Remove** opens LinkedIn's Connections page. If an operation was active, its persisted state is restored as paused after navigation.
+
+### Remove connections
 
 1. Open LinkedIn's connections page.
 2. Paste the names into the panel, one per line.
@@ -64,6 +83,8 @@ Removal and cancellation controls are recognized in both English and Portuguese.
 
 - LinkedIn may change its page structure without notice.
 - The connections page must remain open while the queue is running.
+- The people search page must remain open while collection is running.
+- Collection requires LinkedIn's **1st** connection filter.
 - Closing or reloading the tab interrupts the process. The queue remains saved as paused, but the user must deliberately restart it.
 - Profile URL matching is not available in this version.
 - CSV report export is not available yet.
