@@ -9,7 +9,7 @@ An experimental Google Chrome extension that processes a list of names and autom
 - Accepts one name per line and automatically removes blank and duplicate entries.
 - Requires explicit confirmation before processing the queue.
 - Provides color-coded **Run**, **Pause**, and **Stop** controls.
-- Processes names sequentially with short randomized intervals and waits for the interface when necessary.
+- Processes names sequentially with short randomized intervals and fast polling for interface changes.
 - Uses exact name matching while ignoring letter case, repeated spaces, and accents.
 - Prevents removal when a result is missing or ambiguous.
 - Verifies the person's name again before the final confirmation.
@@ -35,6 +35,8 @@ An experimental Google Chrome extension that processes a list of names and autom
 5. Click **Stop** to prevent further removals. If a LinkedIn confirmation dialog is open, the extension attempts to cancel it.
 
 The name displayed on the connection card must exactly match the provided name. If no card or more than one card matches, the extension skips that entry without removing anyone.
+
+The extension does not assume that LinkedIn will respond after a fixed delay. After entering a name or clicking an action, it checks repeatedly every 100 ms and proceeds as soon as the expected element appears. It skips or reports an error only when the 3-second UI timeout is reached.
 
 For initial testing, use a single connection that you have deliberately chosen to remove. Do not begin with a large list.
 

@@ -5,7 +5,8 @@
   window.__linkedinConnectionRemoverLoaded = true;
 
   const STORAGE_KEY = "lcrStateV1";
-  const SEARCH_SETTLE_MS = 750;
+  const UI_TIMEOUT_MS = 3000;
+  const POLL_INTERVAL_MS = 100;
   const ACTION_DELAY_RANGE = [300, 600];
   const PERSON_DELAY_RANGE = [1200, 2000];
   const SELECTORS = {
@@ -71,7 +72,7 @@
         .some((button) => textMatches(button, ["Remove connection", "Remover conexão"])));
   }
 
-  async function waitFor(getter, timeout = 10000, interval = 200) {
+  async function waitFor(getter, timeout = UI_TIMEOUT_MS, interval = POLL_INTERVAL_MS) {
     const started = Date.now();
     while (Date.now() - started < timeout) {
       const value = getter();
@@ -174,10 +175,15 @@
     const search = await waitFor(() => document.querySelector(SELECTORS.search));
     search.focus();
     setNativeInputValue(search, name);
-    await sleep(SEARCH_SETTLE_MS);
     await checkpoint();
 
-    const matches = findMatchingCards(name);
+    // Poll rapidly instead of assuming LinkedIn will finish filtering after a
+    // fixed delay. The first exact result advances the flow immediately; an
+    // absent result is skipped only after the full UI timeout expires.
+    const matches = await waitFor(() => {
+      const currentMatches = findMatchingCards(name);
+      return currentMatches.length > 0 ? currentMatches : null;
+    }).catch(() => []);
     if (matches.length === 0) {
       updateResult(index, "error", "Não encontrado com correspondência exata.");
       return;
@@ -208,7 +214,7 @@
     await checkpoint();
     removeItem.click();
 
-    const dialog = await waitFor(findRemovalDialog, 10000);
+    const dialog = await waitFor(findRemovalDialog);
     if (!dialogConfirmsName(dialog, actualName)) {
       findCancelButton()?.click();
       throw new Error("O modal não confirmou o nome esperado; operação cancelada.");
@@ -223,7 +229,7 @@
     await checkpoint();
     confirmButton.click();
 
-    await waitFor(() => !document.body.contains(dialog) || !visible(dialog), 12000);
+    await waitFor(() => !document.body.contains(dialog) || !visible(dialog));
     updateResult(index, "removed", "Conexão removida.");
   }
 
