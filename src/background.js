@@ -25,11 +25,11 @@ chrome.action.onClicked.addListener(async (tab) => {
     try {
       await chrome.scripting.insertCSS({
         target: { tabId: tab.id },
-        files: ["content.css"]
+        files: ["src/content/content.css"]
       });
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        files: ["content.js"]
+        files: ["src/content/content.js"]
       });
       await chrome.tabs.sendMessage(tab.id, { type: "LCR_OPEN_COLLECT" });
     } catch (injectionError) {
