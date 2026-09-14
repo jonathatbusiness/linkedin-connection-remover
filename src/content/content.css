@@ -82,6 +82,13 @@
 .lcr-context strong { font-weight: 650; }
 .lcr-context p { margin: 2px 0 0; color: var(--lcr-muted); font-size: 12px; }
 
+.lcr-option { display: flex; align-items: flex-start; gap: 9px; margin: 12px 0 0; padding: 10px 11px; border: 1px solid var(--lcr-border); border-radius: 8px; cursor: pointer; }
+.lcr-option:hover { background: #f8f8f8; }
+.lcr-option input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--lcr-blue); }
+.lcr-option span, .lcr-option strong, .lcr-option small { display: block; }
+.lcr-option strong { font-size: 13px; font-weight: 650; }
+.lcr-option small { margin-top: 2px; color: var(--lcr-muted); font-size: 11px; }
+
 .lcr-metrics { display: grid; grid-template-columns: repeat(3, 1fr); margin: 14px 0; border: 1px solid var(--lcr-border); border-radius: 8px; }
 .lcr-metrics > div { padding: 10px; text-align: center; border-right: 1px solid var(--lcr-border); }
 .lcr-metrics > div:last-child { border-right: 0; }

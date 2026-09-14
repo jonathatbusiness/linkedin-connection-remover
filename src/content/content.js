@@ -11,6 +11,19 @@
   const ACTION_DELAY_RANGE = [300, 600];
   const PERSON_DELAY_RANGE = [1200, 2000];
   const MAX_COLLECTION_PAGES = 100;
+  const COUNTRY_NAMES = new Set([
+    "Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Antigua and Barbuda", "Argentina", "Armenia", "Australia", "Austria", "Azerbaijan",
+    "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin", "Bhutan", "Bolivia", "Bosnia and Herzegovina", "Botswana", "Brazil", "Brunei", "Bulgaria", "Burkina Faso", "Burundi",
+    "Cabo Verde", "Cambodia", "Cameroon", "Canada", "Central African Republic", "Chad", "Chile", "China", "Colombia", "Comoros", "Congo", "Costa Rica", "Croatia", "Cuba", "Cyprus", "Czechia", "Czech Republic",
+    "Democratic Republic of the Congo", "Denmark", "Djibouti", "Dominica", "Dominican Republic", "Ecuador", "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia", "Eswatini", "Ethiopia",
+    "Fiji", "Finland", "France", "Gabon", "Gambia", "Georgia", "Germany", "Ghana", "Greece", "Grenada", "Guatemala", "Guinea", "Guinea-Bissau", "Guyana", "Haiti", "Honduras", "Hungary",
+    "Iceland", "India", "Indonesia", "Iran", "Iraq", "Ireland", "Israel", "Italy", "Ivory Coast", "Jamaica", "Japan", "Jordan", "Kazakhstan", "Kenya", "Kiribati", "Kuwait", "Kyrgyzstan",
+    "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", "Liechtenstein", "Lithuania", "Luxembourg", "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Mauritania", "Mauritius", "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montenegro", "Morocco", "Mozambique", "Myanmar",
+    "Namibia", "Nauru", "Nepal", "Netherlands", "New Zealand", "Nicaragua", "Niger", "Nigeria", "North Korea", "North Macedonia", "Norway", "Oman", "Pakistan", "Palau", "Palestine", "Panama", "Papua New Guinea", "Paraguay", "Peru", "Philippines", "Poland", "Portugal",
+    "Qatar", "Romania", "Russia", "Rwanda", "Saint Kitts and Nevis", "Saint Lucia", "Saint Vincent and the Grenadines", "Samoa", "San Marino", "Sao Tome and Principe", "Saudi Arabia", "Senegal", "Serbia", "Seychelles", "Sierra Leone", "Singapore", "Slovakia", "Slovenia", "Solomon Islands", "Somalia", "South Africa", "South Korea", "South Sudan", "Spain", "Sri Lanka", "Sudan", "Suriname", "Sweden", "Switzerland", "Syria",
+    "Taiwan", "Tajikistan", "Tanzania", "Thailand", "Timor-Leste", "Togo", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey", "Turkmenistan", "Tuvalu", "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom", "United States", "Uruguay", "Uzbekistan", "Vanuatu", "Vatican City", "Venezuela", "Vietnam", "Yemen", "Zambia", "Zimbabwe",
+    "Hong Kong", "Macao", "Macau", "Puerto Rico"
+  ].map((country) => country.toLocaleLowerCase()));
   const ROUTES = {
     connections: "/mynetwork/invite-connect/connections",
     search: "/search/results/people"
@@ -41,6 +54,7 @@
       duplicates: 0,
       currentPage: 0,
       searchUrl: "",
+      includeProfileContext: false,
       message: "Ready to collect the current filtered search.",
       pauseRequested: false,
       stopRequested: false
@@ -195,6 +209,18 @@
       .trim();
   }
 
+  function extractProfileContext(card, nameLink) {
+    if (!state.collection.includeProfileContext) return { headline: "", reportLocation: "" };
+    const paragraphs = [...card.querySelectorAll("p")].filter((paragraph) => paragraph.innerText.trim());
+    const nameParagraph = nameLink?.closest("p");
+    const nameIndex = paragraphs.indexOf(nameParagraph);
+    const headline = nameIndex >= 0 ? paragraphs[nameIndex + 1]?.innerText.trim() || "" : "";
+    const fullLocation = nameIndex >= 0 ? paragraphs[nameIndex + 2]?.innerText.trim() || "" : "";
+    const lastSegment = fullLocation.split(",").pop()?.trim() || "";
+    const country = COUNTRY_NAMES.has(normalize(lastSegment)) ? lastSegment : "";
+    return { headline, reportLocation: country || fullLocation };
+  }
+
   function getSearchResultCards() {
     return [...document.querySelectorAll(SELECTORS.searchResultCard)]
       .filter(visible)
@@ -208,8 +234,10 @@
       .find((link) => canonicalProfileUrl(link.href) === cardUrl);
     const name = cleanProfileName(nameLink?.innerText || nameLink?.textContent);
     if (!name || !cardUrl) return null;
+    const context = extractProfileContext(card, nameLink);
     return {
       name,
+      ...context,
       profileUrl: cardUrl,
       profileKey: cardUrl.toLocaleLowerCase(),
       degree: "1st",
@@ -242,17 +270,23 @@
 
   function captureCurrentPage() {
     const cards = getSearchResultCards();
-    const existing = new Set(state.collection.profiles.map((profile) => profile.profileKey));
+    const existing = new Map(state.collection.profiles.map((profile) => [profile.profileKey, profile]));
     let added = 0;
     let duplicates = 0;
     for (const card of cards) {
       const profile = extractProfile(card);
       if (!profile) continue;
       if (existing.has(profile.profileKey)) {
+        if (state.collection.includeProfileContext) {
+          Object.assign(existing.get(profile.profileKey), {
+            headline: profile.headline,
+            reportLocation: profile.reportLocation
+          });
+        }
         duplicates += 1;
         continue;
       }
-      existing.add(profile.profileKey);
+      existing.set(profile.profileKey, profile);
       state.collection.profiles.push(profile);
       added += 1;
     }
@@ -287,6 +321,33 @@
     persist();
   }
 
+  function csvValue(value) {
+    return `"${String(value ?? "").replace(/"/g, '""')}"`;
+  }
+
+  function exportCollectedCsv() {
+    if (!state.collection.profiles.length) return;
+    const columns = ["Name", "Profile URL", "Headline", "Country or location", "Collected at", "Source page", "Source URL"];
+    const rows = state.collection.profiles.map((profile) => [
+      profile.name,
+      profile.profileUrl,
+      profile.headline || "",
+      profile.reportLocation || "",
+      profile.collectedAt,
+      profile.sourcePage,
+      profile.sourceUrl
+    ]);
+    const csv = [columns, ...rows].map((row) => row.map(csvValue).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `linkedin-collected-profiles-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   function injectInlineCollectButtons() {
     if (!isPeopleSearchPage()) return;
     for (const card of getSearchResultCards()) {
@@ -305,7 +366,8 @@
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        collectSingleProfile(profile);
+        const currentProfile = extractProfile(card);
+        if (currentProfile) collectSingleProfile(currentProfile);
       });
       actionContainer.appendChild(button);
     }
@@ -649,6 +711,9 @@
     root.querySelector("[data-action=collect-stop]").disabled = !collectionRunning;
     root.querySelector("[data-action=add-to-removal]").disabled = !state.collection.profiles.length || collectionRunning;
     root.querySelector("[data-action=clear-collected]").disabled = !state.collection.profiles.length || collectionRunning;
+    root.querySelector("[data-action=export-csv]").disabled = !state.collection.profiles.length;
+    root.querySelector("#lcr-include-context").checked = Boolean(state.collection.includeProfileContext);
+    root.querySelector("#lcr-include-context").disabled = collectionRunning;
     root.querySelector(".lcr-collect-state").textContent = statusLabel(state.collection.mode);
     root.querySelector(".lcr-collect-page").textContent = `Page ${state.collection.currentPage || getCurrentPage()}`;
     root.querySelector(".lcr-collect-count").textContent = String(state.collection.profiles.length);
@@ -690,11 +755,12 @@
       <nav class="lcr-tabs" aria-label="Extension sections"><button data-tab="collect" type="button">Collect</button><button data-tab="remove" type="button">Remove</button></nav>
       <section class="lcr-panel" data-panel="collect">
         <div class="lcr-context"><span class="lcr-context-icon">1st</span><div><strong>Filtered people search</strong><p>Only first-degree connections are collected.</p></div></div>
+        <label class="lcr-option"><input id="lcr-include-context" type="checkbox"><span><strong>Include profile context</strong><small>Capture headline and country for CSV reports.</small></span></label>
         <div class="lcr-metrics"><div><strong class="lcr-collect-count">0</strong><span>Collected</span></div><div><strong class="lcr-duplicate-count">0</strong><span>Duplicates</span></div><div><strong class="lcr-collect-page">Page 1</strong><span>Current</span></div></div>
         <div class="lcr-controls"><button class="lcr-button lcr-button-primary" data-action="collect" type="button"><span class="lcr-play-icon">▶</span> Collect all pages</button><button class="lcr-button lcr-button-secondary lcr-square" data-action="collect-pause" type="button" aria-label="Pause collection">Ⅱ</button><button class="lcr-button lcr-button-tertiary lcr-square lcr-stop-icon" data-action="collect-stop" type="button" aria-label="Stop collection">■</button></div>
         <div class="lcr-status"><strong class="lcr-collect-state">Ready</strong><p class="lcr-collect-message">Ready to collect the current filtered search.</p></div>
-        <div class="lcr-section-heading"><h3>Collected profiles</h3><div class="lcr-heading-actions"><span>Latest 50</span><button class="lcr-text-button" data-action="clear-collected" type="button">Clear</button></div></div><div class="lcr-profile-list lcr-scroll-list"><div class="lcr-empty">No profiles collected yet.</div></div>
-        <button class="lcr-button lcr-button-secondary lcr-full" data-action="add-to-removal" type="button">Add collected profiles to removal</button>
+        <div class="lcr-section-heading"><h3>Collected profiles</h3><div class="lcr-heading-actions"><span>Latest 50</span><button class="lcr-text-button" data-action="export-csv" type="button">Export CSV</button><button class="lcr-text-button" data-action="clear-collected" type="button">Clear</button></div></div><div class="lcr-profile-list lcr-scroll-list"><div class="lcr-empty">No profiles collected yet.</div></div>
+        <button class="lcr-button lcr-button-secondary lcr-full" data-action="add-to-removal" type="button">Add names to removal queue</button>
       </section>
       <section class="lcr-panel" data-panel="remove" hidden>
         <div class="lcr-section-heading lcr-queue-heading"><label class="lcr-label" for="lcr-names">Removal queue</label><button class="lcr-text-button" data-action="clear-queue" type="button">Clear queue</button></div><textarea class="lcr-textarea" id="lcr-names" placeholder="One exact name per line"></textarea><p class="lcr-hint">Adding collected profiles appends them to this saved queue. Clear the queue to start over.</p>
@@ -718,6 +784,13 @@
     root.querySelector("[data-action=collect-pause]").addEventListener("click", () => { state.collection.pauseRequested = true; state.collection.mode = "paused"; render(); persist(); });
     root.querySelector("[data-action=collect-stop]").addEventListener("click", () => { state.collection.stopRequested = true; state.collection.pauseRequested = false; state.collection.mode = "stopped"; state.collection.message = "Stopping collection..."; render(); persist(); });
     root.querySelector("[data-action=add-to-removal]").addEventListener("click", addCollectedToRemoval);
+    root.querySelector("#lcr-include-context").addEventListener("change", (event) => {
+      state.collection.includeProfileContext = event.target.checked;
+      state.collection.message = event.target.checked ? "Profile context will be included in new collections." : "New collections will include names and profile URLs only.";
+      render();
+      persist();
+    });
+    root.querySelector("[data-action=export-csv]").addEventListener("click", exportCollectedCsv);
     root.querySelector("[data-action=clear-collected]").addEventListener("click", async () => {
       const confirmed = await showConfirmation({ title: "Clear collected profiles?", body: "This removes the collected profile list from local extension storage.", warning: "Profiles already added to the removal queue will not be changed.", confirmText: "Clear profiles" });
       if (confirmed) clearCollected();

@@ -2,6 +2,8 @@
 
 An experimental Google Chrome extension that processes a list of names and automates the visible removal flow on LinkedIn's connections page: search for a person, open the actions menu, select the removal option, and confirm.
 
+Current version: **0.3.0**
+
 > **Warning:** removing a connection is a real and potentially irreversible action. Review your list carefully before starting. LinkedIn may change its interface at any time, which can break the automation. Automated activity may also be subject to LinkedIn's terms and platform limits. Use this extension at your own risk and at a moderate pace.
 
 ## Features
@@ -22,6 +24,8 @@ An experimental Google Chrome extension that processes a list of names and autom
 - Opens the collection panel and its saved LinkedIn people search when you click the extension icon.
 - Uses the **Collect** and **Remove** tabs to open the corresponding LinkedIn page automatically.
 - Adds a compact **+** button beside each eligible search result for selective profile collection.
+- Optionally captures each profile's headline and country (falling back to the full location) for local CSV reports.
+- Exports collected profiles as a CSV file generated locally in the browser.
 
 ## Install locally
 
@@ -29,8 +33,9 @@ An experimental Google Chrome extension that processes a list of names and autom
 2. Enable **Developer mode**.
 3. Click **Load unpacked**.
 4. Select this project folder.
-5. Open `https://www.linkedin.com/mynetwork/invite-connect/connections/`.
-6. Click the extension icon to show or hide the panel. Reloading the LinkedIn page after updating the extension is still recommended, although the extension can also inject itself on demand.
+5. Click the extension icon. It opens the collection panel and the last saved LinkedIn people search, or a default first-degree search on first use.
+
+After updating the unpacked extension, reload it in `chrome://extensions` and refresh the open LinkedIn tab.
 
 ## Usage
 
@@ -39,10 +44,14 @@ An experimental Google Chrome extension that processes a list of names and autom
 1. Open a LinkedIn people search and apply the **1st** connection filter.
 2. Apply any additional location, company, keyword, or other filters directly in LinkedIn.
 3. Open the extension and select **Collect**.
-4. Click **Collect all pages**. The extension captures only the main search-result profiles, follows **Next**, and stops at the final page.
-5. Review the collected profiles, then click **Add collected profiles to removal**.
+4. Optionally enable **Include profile context** to capture the headline and country for reporting. When a country cannot be recognized, the complete location is used instead.
+5. Click **Collect all pages**. The extension captures only the main search-result profiles, follows **Next**, and stops at the final page. Alternatively, use the compact **+** button beside an individual result.
+6. Optionally click **Export CSV** to download the collected report locally.
+7. Review the collected profiles, then click **Add names to removal queue**.
 
-Collection never starts removal. Collected profiles are deduplicated by canonical profile URL and stored locally until cleared.
+Collection never starts removal. Collected profiles are deduplicated by canonical profile URL and stored locally until cleared. Only profile names are transferred to the removal queue; headline and location data are report-only fields.
+
+The CSV includes the profile name, canonical URL, optional headline, **Country or location**, collection timestamp, source page, and source search URL. It is generated with a browser `Blob`; no export service or external server is used.
 
 Selecting **Collect** opens the last saved people-search URL with its filters preserved and resets it to the first page. Selecting **Remove** opens LinkedIn's Connections page. If an operation was active, its persisted state is restored as paused after navigation.
 
@@ -63,9 +72,10 @@ For initial testing, use a single connection that you have deliberately chosen t
 ## Project structure
 
 - `manifest.json`: Manifest V3 extension configuration.
-- `background.js`: shows or hides the panel and injects it when necessary.
-- `content.js`: user interface, queue, validation, and automation logic.
-- `content.css`: panel and dialog styles using the `lcr` prefix.
+- `assets/icons/`: extension and toolbar icons.
+- `src/background.js`: extension-icon navigation and on-demand injection.
+- `src/content/content.js`: collection, reporting, queue, validation, and automation logic.
+- `src/content/content.css`: injected controls, panel, and dialog styles using the `lcr` prefix.
 
 ## Selectors
 
@@ -87,8 +97,8 @@ Removal and cancellation controls are recognized in both English and Portuguese.
 - The people search page must remain open while collection is running.
 - Collection requires LinkedIn's **1st** connection filter.
 - Closing or reloading the tab interrupts the process. The queue remains saved as paused, but the user must deliberately restart it.
-- Profile URL matching is not available in this version.
-- CSV report export is not available yet.
+- Removal uses exact names because LinkedIn's Connections search does not accept profile URLs.
+- Country recognition depends on the location text displayed by LinkedIn. If no country is recognized, the CSV preserves the full location instead.
 - Names alone may not uniquely identify a person. Ambiguous exact matches are skipped.
 
 ## Connect the repository to GitHub
@@ -118,11 +128,11 @@ After changing the files:
 1. Open `chrome://extensions`.
 2. Find **LinkedIn Connection Remover**.
 3. Click **Reload**.
-4. Reload the LinkedIn connections page.
+4. Reload any open LinkedIn search or connections page.
 
 ## Privacy
 
-The extension does not use a separate server and does not send the submitted list to its developer or another external service. Names and queue progress are stored locally by Chrome. Searches and removal actions naturally interact with the LinkedIn account currently open in the browser.
+The extension does not use a separate server and does not send collected profile data or the removal queue to its developer or another external service. Names, optional profile context, and queue progress are stored locally by Chrome. CSV files are generated locally in the browser. Searches and removal actions naturally interact with the LinkedIn account currently open in the browser.
 
 ## License
 
